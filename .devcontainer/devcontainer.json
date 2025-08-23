@@ -21,9 +21,6 @@
       }
     }
   },
-  "postCreateCommand": "go mod init swarm-misskey && go mod tidy",
-  "remoteUser": "vscode",
-  "mounts": [
-    "source=${localWorkspaceFolder}/.devcontainer/go-cache,target=/go/pkg/mod,type=bind,consistency=cached"
-  ]
+  "postCreateCommand": "go mod tidy",
+  "remoteUser": "vscode"
 }
