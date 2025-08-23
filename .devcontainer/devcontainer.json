@@ -3,8 +3,15 @@
   "image": "mcr.microsoft.com/devcontainers/go:1.21",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    }
   },
+  // 認証情報を環境変数で設定する場合（推奨）
+  // "remoteEnv": {
+  //   "CLOUDFLARE_API_TOKEN": "${localEnv:CLOUDFLARE_API_TOKEN}"
+  // },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -21,6 +28,6 @@
       }
     }
   },
-  "postCreateCommand": "go mod tidy",
+  "postCreateCommand": "go mod tidy && git config --global core.editor true && git config --global init.defaultBranch main && git config --global pull.rebase false && npm install -g wrangler",
   "remoteUser": "vscode"
 }
