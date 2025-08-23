@@ -1,7 +1,11 @@
 name = "swarm-misskey-integration"
-main = "main.go"
+main = "worker.go"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Default environment (top-level)
+[env.default]
+name = "swarm-misskey-integration"
 
 [env.production]
 name = "swarm-misskey-integration"
