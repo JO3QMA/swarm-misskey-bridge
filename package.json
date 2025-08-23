@@ -1,0 +1,29 @@
+{
+  "name": "swarm-misskey-integration",
+  "version": "1.0.0",
+  "description": "Swarm Misskey Integration - Cloudflare Worker",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "tail": "wrangler tail",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "swarm",
+    "misskey",
+    "webhook",
+    "integration"
+  ],
+  "author": "G.dark.matter@gmail.com",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^4.28.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
