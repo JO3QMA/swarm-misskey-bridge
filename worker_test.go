@@ -1,0 +1,210 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestWorker_HandleRequest(t *testing.T) {
+	worker := NewWorker()
+
+	tests := []struct {
+		name     string
+		method   string
+		path     string
+		body     string
+		expected int
+	}{
+		{
+			name:     "Root endpoint",
+			method:   "GET",
+			path:     "/",
+			body:     "",
+			expected: 200,
+		},
+		{
+			name:     "Health endpoint",
+			method:   "GET",
+			path:     "/health",
+			body:     "",
+			expected: 200,
+		},
+		{
+			name:     "Webhook endpoint with valid data",
+			method:   "POST",
+			path:     "/webhook",
+			body:     `{"id":"test","venueName":"Test Venue","comment":"Test comment","url":"https://example.com","createdAt":"2024-01-01T12:00:00Z","userId":"user1"}`,
+			expected: 200,
+		},
+		{
+			name:     "Webhook endpoint with invalid JSON",
+			method:   "POST",
+			path:     "/webhook",
+			body:     `invalid json`,
+			expected: 400,
+		},
+		{
+			name:     "Not found endpoint",
+			method:   "GET",
+			path:     "/notfound",
+			body:     "",
+			expected: 404,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{
+				Method:  tt.method,
+				URL:     &URL{Path: tt.path},
+				Body:    tt.body,
+				Headers: make(map[string]string),
+			}
+
+			resp, err := worker.HandleRequest(context.Background(), req)
+			if err != nil {
+				t.Errorf("HandleRequest() error = %v", err)
+				return
+			}
+
+			if resp.Status != tt.expected {
+				t.Errorf("HandleRequest() status = %v, want %v", resp.Status, tt.expected)
+			}
+		})
+	}
+}
+
+func TestWorker_CreatePostText(t *testing.T) {
+	worker := NewWorker()
+
+	checkin := SwarmCheckin{
+		ID:        "test-id",
+		VenueName: "Test Restaurant",
+		Comment:   "Great food!",
+		URL:       "https://swarmapp.com/checkin/test",
+		CreatedAt: time.Now(),
+		UserID:    "user1",
+	}
+
+	text := worker.createPostText(checkin)
+
+	// Check if placeholders are replaced
+	if !strings.Contains(text, "Test Restaurant") {
+		t.Errorf("createPostText() does not contain venue name")
+	}
+
+	if !strings.Contains(text, "Great food!") {
+		t.Errorf("createPostText() does not contain comment")
+	}
+
+	if !strings.Contains(text, "https://swarmapp.com/checkin/test") {
+		t.Errorf("createPostText() does not contain URL")
+	}
+}
+
+func TestWorker_VerifyWebhookSignature(t *testing.T) {
+	worker := NewWorker()
+
+	tests := []struct {
+		name      string
+		signature string
+		expected  bool
+	}{
+		{
+			name:      "No signature",
+			signature: "",
+			expected:  true,
+		},
+		{
+			name:      "With signature",
+			signature: "test-signature",
+			expected:  true, // Currently always returns true
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &Request{
+				Headers: map[string]string{
+					"X-Swarm-Signature": tt.signature,
+				},
+			}
+
+			result := worker.verifyWebhookSignature(req)
+			if result != tt.expected {
+				t.Errorf("verifyWebhookSignature() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSwarmCheckin_UnmarshalJSON(t *testing.T) {
+	jsonData := `{
+		"id": "test-id",
+		"venueName": "Test Venue",
+		"comment": "Test comment",
+		"url": "https://example.com",
+		"imageUrl": "https://example.com/image.jpg",
+		"createdAt": "2024-01-01T12:00:00Z",
+		"userId": "user1"
+	}`
+
+	var checkin SwarmCheckin
+	err := json.Unmarshal([]byte(jsonData), &checkin)
+	if err != nil {
+		t.Errorf("Failed to unmarshal JSON: %v", err)
+	}
+
+	if checkin.ID != "test-id" {
+		t.Errorf("Expected ID 'test-id', got '%s'", checkin.ID)
+	}
+
+	if checkin.VenueName != "Test Venue" {
+		t.Errorf("Expected VenueName 'Test Venue', got '%s'", checkin.VenueName)
+	}
+
+	if checkin.Comment != "Test comment" {
+		t.Errorf("Expected Comment 'Test comment', got '%s'", checkin.Comment)
+	}
+
+	if checkin.URL != "https://example.com" {
+		t.Errorf("Expected URL 'https://example.com', got '%s'", checkin.URL)
+	}
+
+	if checkin.ImageURL != "https://example.com/image.jpg" {
+		t.Errorf("Expected ImageURL 'https://example.com/image.jpg', got '%s'", checkin.ImageURL)
+	}
+
+	if checkin.UserID != "user1" {
+		t.Errorf("Expected UserID 'user1', got '%s'", checkin.UserID)
+	}
+}
+
+func TestResponse_MarshalJSON(t *testing.T) {
+	response := APIResponse{
+		Success: true,
+		Message: "Test message",
+	}
+
+	jsonData, err := json.Marshal(response)
+	if err != nil {
+		t.Errorf("Failed to marshal JSON: %v", err)
+	}
+
+	var decoded APIResponse
+	err = json.Unmarshal(jsonData, &decoded)
+	if err != nil {
+		t.Errorf("Failed to unmarshal JSON: %v", err)
+	}
+
+	if decoded.Success != response.Success {
+		t.Errorf("Expected Success %v, got %v", response.Success, decoded.Success)
+	}
+
+	if decoded.Message != response.Message {
+		t.Errorf("Expected Message '%s', got '%s'", response.Message, decoded.Message)
+	}
+}

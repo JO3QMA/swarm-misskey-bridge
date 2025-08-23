@@ -1,0 +1,24 @@
+name = "swarm-misskey-integration"
+main = "main.go"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+name = "swarm-misskey-integration"
+
+[env.staging]
+name = "swarm-misskey-integration-staging"
+
+# Cron trigger for polling Swarm API (optional)
+[triggers]
+crons = ["*/5 * * * *"]  # Every 5 minutes
+
+# KV namespace for storing configuration
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+# Secrets will be managed via wrangler secret command
+# wrangler secret put MISSKEY_API_KEY
+# wrangler secret put SWARM_WEBHOOK_SECRET
