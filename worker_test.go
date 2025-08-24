@@ -47,6 +47,41 @@ func TestWorker_HandleRequest(t *testing.T) {
 			expected: 400,
 		},
 		{
+			name:     "Polling endpoint",
+			method:   "POST",
+			path:     "/poll",
+			body:     "",
+			expected: 200,
+		},
+		{
+			name:     "Manual polling endpoint",
+			method:   "POST",
+			path:     "/manual-poll",
+			body:     "",
+			expected: 200,
+		},
+		{
+			name:     "Get config endpoint",
+			method:   "GET",
+			path:     "/config",
+			body:     "",
+			expected: 200,
+		},
+		{
+			name:     "Update config endpoint with valid JSON",
+			method:   "POST",
+			path:     "/config",
+			body:     `{"misskeyInstance":"https://test.com","postTemplate":"Test template"}`,
+			expected: 200,
+		},
+		{
+			name:     "Update config endpoint with invalid JSON",
+			method:   "POST",
+			path:     "/config",
+			body:     `invalid json`,
+			expected: 400,
+		},
+		{
 			name:     "Not found endpoint",
 			method:   "GET",
 			path:     "/notfound",
@@ -206,5 +241,177 @@ func TestResponse_MarshalJSON(t *testing.T) {
 
 	if decoded.Message != response.Message {
 		t.Errorf("Expected Message '%s', got '%s'", response.Message, decoded.Message)
+	}
+}
+
+func TestWorker_PollingFunctions(t *testing.T) {
+	worker := NewWorker()
+
+	// Test getLastCheckinTime
+	lastTime, err := worker.getLastCheckinTime(context.Background())
+	if err != nil {
+		t.Errorf("getLastCheckinTime() error = %v", err)
+	}
+
+	// Should return a time within the last hour (with some tolerance)
+	if time.Since(lastTime) > time.Hour+time.Minute {
+		t.Errorf("getLastCheckinTime() returned time too old: %v", lastTime)
+	}
+
+	// Test updateLastCheckinTime
+	testTime := time.Now()
+	err = worker.updateLastCheckinTime(context.Background(), testTime)
+	if err != nil {
+		t.Errorf("updateLastCheckinTime() error = %v", err)
+	}
+}
+
+func TestWorker_ConfigManagement(t *testing.T) {
+	worker := NewWorker()
+
+	// Test initial configuration
+	originalInstance := worker.config.MisskeyInstance
+	originalTemplate := worker.config.PostTemplate
+
+	// Test configuration update
+	updateData := map[string]interface{}{
+		"misskeyInstance": "https://test-instance.com",
+		"postTemplate":    "Test template {venueName}",
+		"visibility":      "home",
+		"pollingInterval": 10.0,
+	}
+
+	updateJSON, err := json.Marshal(updateData)
+	if err != nil {
+		t.Errorf("Failed to marshal update data: %v", err)
+	}
+
+	req := &Request{
+		Method:  "POST",
+		URL:     &URL{Path: "/config"},
+		Body:    string(updateJSON),
+		Headers: make(map[string]string),
+	}
+
+	resp, err := worker.HandleRequest(context.Background(), req)
+	if err != nil {
+		t.Errorf("HandleRequest() error = %v", err)
+	}
+
+	if resp.Status != 200 {
+		t.Errorf("Expected status 200, got %d", resp.Status)
+	}
+
+	// Verify configuration was updated
+	if worker.config.MisskeyInstance != "https://test-instance.com" {
+		t.Errorf("MisskeyInstance not updated correctly")
+	}
+
+	if worker.config.PostTemplate != "Test template {venueName}" {
+		t.Errorf("PostTemplate not updated correctly")
+	}
+
+	if worker.config.Visibility != "home" {
+		t.Errorf("Visibility not updated correctly")
+	}
+
+	if worker.config.PollingInterval != 10 {
+		t.Errorf("PollingInterval not updated correctly")
+	}
+
+	// Test get config endpoint
+	req = &Request{
+		Method:  "GET",
+		URL:     &URL{Path: "/config"},
+		Body:    "",
+		Headers: make(map[string]string),
+	}
+
+	resp, err = worker.HandleRequest(context.Background(), req)
+	if err != nil {
+		t.Errorf("HandleRequest() error = %v", err)
+	}
+
+	if resp.Status != 200 {
+		t.Errorf("Expected status 200, got %d", resp.Status)
+	}
+
+	// Parse response to verify it contains expected fields
+	var configResponse map[string]interface{}
+	err = json.Unmarshal([]byte(resp.Body), &configResponse)
+	if err != nil {
+		t.Errorf("Failed to unmarshal config response: %v", err)
+	}
+
+	if configResponse["misskeyInstance"] != "https://test-instance.com" {
+		t.Errorf("Config response does not contain updated misskeyInstance")
+	}
+
+	// Restore original configuration
+	worker.config.MisskeyInstance = originalInstance
+	worker.config.PostTemplate = originalTemplate
+}
+
+func TestWorker_SwarmAPIResponseParsing(t *testing.T) {
+	// Test Swarm API response parsing
+	apiResponse := `{
+		"response": {
+			"checkins": {
+				"items": [
+					{
+						"id": "test-checkin-1",
+						"createdAt": 1704067200,
+						"venue": {
+							"name": "Test Restaurant"
+						},
+						"shout": "Great food!",
+						"url": "https://swarmapp.com/checkin/test1"
+					},
+					{
+						"id": "test-checkin-2",
+						"createdAt": 1704067800,
+						"venue": {
+							"name": "Test Cafe"
+						},
+						"shout": "Nice coffee!",
+						"url": "https://swarmapp.com/checkin/test2"
+					}
+				]
+			}
+		}
+	}`
+
+	var swarmResp SwarmAPIResponse
+	err := json.Unmarshal([]byte(apiResponse), &swarmResp)
+	if err != nil {
+		t.Errorf("Failed to unmarshal Swarm API response: %v", err)
+	}
+
+	if len(swarmResp.Response.Checkins.Items) != 2 {
+		t.Errorf("Expected 2 checkins, got %d", len(swarmResp.Response.Checkins.Items))
+	}
+
+	// Check first checkin
+	firstCheckin := swarmResp.Response.Checkins.Items[0]
+	if firstCheckin.ID != "test-checkin-1" {
+		t.Errorf("Expected ID 'test-checkin-1', got '%s'", firstCheckin.ID)
+	}
+
+	if firstCheckin.Venue.Name != "Test Restaurant" {
+		t.Errorf("Expected venue name 'Test Restaurant', got '%s'", firstCheckin.Venue.Name)
+	}
+
+	if firstCheckin.Shout != "Great food!" {
+		t.Errorf("Expected shout 'Great food!', got '%s'", firstCheckin.Shout)
+	}
+
+	// Check second checkin
+	secondCheckin := swarmResp.Response.Checkins.Items[1]
+	if secondCheckin.ID != "test-checkin-2" {
+		t.Errorf("Expected ID 'test-checkin-2', got '%s'", secondCheckin.ID)
+	}
+
+	if secondCheckin.Venue.Name != "Test Cafe" {
+		t.Errorf("Expected venue name 'Test Cafe', got '%s'", secondCheckin.Venue.Name)
 	}
 }

@@ -103,3 +103,6 @@ public
 # Temporary folders
 tmp/
 temp/
+
+# Devcontainer cache
+.devcontainer/go-cache/

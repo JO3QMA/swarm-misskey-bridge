@@ -1,7 +1,11 @@
 name = "swarm-misskey-integration"
-main = "main.go"
+main = "src/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Default environment (top-level)
+[env.default]
+name = "swarm-misskey-integration"
 
 [env.production]
 name = "swarm-misskey-integration"
@@ -16,8 +20,8 @@ crons = ["*/5 * * * *"]  # Every 5 minutes
 # KV namespace for storing configuration
 [[kv_namespaces]]
 binding = "CONFIG"
-id = "your-kv-namespace-id"
-preview_id = "your-preview-kv-namespace-id"
+id = "41fcc2e935c546c5a6edbe5a31d8189d"
+preview_id = "79723ccb0470442e850f9c30467c6677"
 
 # Secrets will be managed via wrangler secret command
 # wrangler secret put MISSKEY_API_KEY

@@ -4,17 +4,20 @@ Swarmでのチェックイン情報を自動的に取得し、指定したMisske
 
 ## 機能
 
-- **Swarmとの連携**: SwarmのWebhookまたはAPIポーリングでチェックイン情報を取得
+- **Swarmとの連携**: SwarmのAPIポーリングでチェックイン情報を取得（5分間隔）
 - **Misskeyへの投稿**: チェックイン情報をMisskeyに自動投稿
 - **画像対応**: Swarmに添付された画像をMisskeyにアップロード
 - **カスタマイズ可能**: 投稿内容のテンプレートをカスタマイズ可能
 - **セキュア**: APIキーはCloudflare WorkersのSecretsで管理
+- **自動ポーリング**: Cloudflare WorkersのCron Triggers機能で自動実行
+- **重複防止**: 同じチェックインの重複投稿を防止
 
 ## 技術スタック
 
 - **言語**: Golang (WebAssembly)
 - **プラットフォーム**: Cloudflare Workers
 - **開発環境**: Devcontainer
+- **ストレージ**: Cloudflare KV (設定と最終チェックイン時刻の保存)
 
 ## セットアップ
 
@@ -23,6 +26,7 @@ Swarmでのチェックイン情報を自動的に取得し、指定したMisske
 - [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) がインストールされていること
 - Cloudflareアカウントがあること
 - MisskeyインスタンスのAPIキーがあること
+- Foursquare (Swarm) のAPIキーがあること
 
 ### 2. プロジェクトのセットアップ
 
@@ -65,8 +69,11 @@ preview_id = "your-preview-kv-namespace-id"
 # MisskeyのAPIキーを設定
 wrangler secret put MISSKEY_API_KEY
 
-# SwarmのWebhookシークレットを設定（オプション）
-wrangler secret put SWARM_WEBHOOK_SECRET
+# SwarmのAPIキーを設定
+wrangler secret put SWARM_API_KEY
+
+# SwarmのユーザーIDを設定
+wrangler secret put SWARM_USER_ID
 ```
 
 #### 3.4 環境変数の設定
@@ -94,131 +101,113 @@ wrangler deploy
 
 ## 使用方法
 
-### Webhookエンドポイント
+### ポーリング機能
 
-SwarmからWebhookを受け取る場合：
+このアプリケーションは、Cloudflare WorkersのCron Triggers機能を使用して5分ごとにSwarm APIをポーリングし、新しいチェックインがあればMisskeyに投稿します。
 
-```
-POST https://your-worker.your-subdomain.workers.dev/webhook
-```
+#### 手動ポーリング
 
-### ヘルスチェック
+テスト目的で手動でポーリングを実行できます：
 
-```
-GET https://your-worker.your-subdomain.workers.dev/health
+```bash
+curl -X POST https://your-worker.your-subdomain.workers.dev/manual-poll
 ```
 
-### ルートエンドポイント
+#### 設定の確認
 
+現在の設定を確認できます：
+
+```bash
+curl https://your-worker.your-subdomain.workers.dev/config
 ```
-GET https://your-worker.your-subdomain.workers.dev/
+
+#### 設定の更新
+
+設定を更新できます：
+
+```bash
+curl -X POST https://your-worker.your-subdomain.workers.dev/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "misskeyInstance": "https://your-misskey-instance.com",
+    "postTemplate": "Swarmでチェックインしました！📍 {venueName} {comment} #swarm #misskey",
+    "visibility": "public",
+    "pollingInterval": 5
+  }'
 ```
 
-## 設定オプション
+### エンドポイント一覧
 
-### 投稿テンプレート
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/` | GET | アプリケーションの状態確認 |
+| `/health` | GET | ヘルスチェック |
+| `/poll` | POST | Cron Triggers用のポーリングエンドポイント |
+| `/manual-poll` | POST | 手動ポーリング実行 |
+| `/config` | GET | 設定の取得 |
+| `/config` | POST | 設定の更新 |
 
-以下のプレースホルダーが使用できます：
+## 投稿テンプレート
+
+投稿テンプレートでは以下のプレースホルダーが使用できます：
 
 - `{venueName}`: チェックインした場所の名前
 - `{comment}`: チェックイン時のコメント
-- `{url}`: チェックインのURL
+- `{url}`: SwarmのチェックインURL
 
 例：
 ```
 Swarmでチェックインしました！📍 {venueName} {comment} #swarm #misskey
 ```
 
-### 投稿の可視性
-
-- `public`: 公開
-- `home`: ホームタイムライン
-- `followers`: フォロワーのみ
-- `specified`: 指定したユーザーのみ
-
-## API仕様
-
-### Swarm Webhookペイロード
-
-```json
-{
-  "id": "checkin-id",
-  "venueName": "場所の名前",
-  "comment": "チェックイン時のコメント",
-  "url": "https://swarmapp.com/checkin/...",
-  "imageUrl": "https://example.com/image.jpg",
-  "createdAt": "2024-01-01T12:00:00Z",
-  "userId": "user-id"
-}
-```
-
-### レスポンス
-
-成功時：
-```json
-{
-  "success": true,
-  "message": "Checkin processed successfully"
-}
-```
-
-エラー時：
-```json
-{
-  "success": false,
-  "error": "エラーメッセージ"
-}
-```
-
-## 開発
-
-### Devcontainer
-
-このプロジェクトはDevcontainerに対応しています。VS CodeでDevcontainerを開くことで、開発環境が自動的にセットアップされます。
-
-### ローカル開発
-
-```bash
-# 依存関係をインストール
-go mod tidy
-
-# テストを実行
-go test ./...
-
-# ローカルで実行
-go run main.go
-```
-
 ## トラブルシューティング
 
 ### よくある問題
 
-1. **APIキーが無効**
-   - MisskeyのAPIキーが正しく設定されているか確認
-   - APIキーに適切な権限があるか確認
+1. **APIキーが正しく設定されていない**
+   - `wrangler secret list` で設定を確認
+   - 必要に応じて再設定
 
-2. **画像のアップロードに失敗**
-   - 画像URLがアクセス可能か確認
-   - Misskeyインスタンスのファイルアップロード制限を確認
+2. **KVストレージにアクセスできない**
+   - `wrangler.toml` のKV namespace設定を確認
+   - KV namespaceが正しく作成されているか確認
 
-3. **Webhookが受信されない**
-   - SwarmのWebhook設定を確認
-   - エンドポイントURLが正しいか確認
+3. **ポーリングが動作しない**
+   - Cloudflare Workersのログを確認
+   - 手動ポーリングエンドポイントでテスト
 
 ### ログの確認
 
 ```bash
-# リアルタイムログを確認
+# リアルタイムログの確認
 wrangler tail
 
 # 特定の時間のログを確認
-wrangler tail --since 2024-01-01T00:00:00Z
+wrangler tail --format=pretty
+```
+
+## 開発
+
+### ローカル開発
+
+```bash
+# 開発サーバーの起動
+wrangler dev
+
+# テストの実行
+go test ./...
+```
+
+### テスト
+
+```bash
+# 単体テストの実行
+go test -v
+
+# カバレッジの確認
+go test -cover
 ```
 
 ## ライセンス
 
 MIT License
-
-## 貢献
-
-プルリクエストやイシューの報告を歓迎します。
